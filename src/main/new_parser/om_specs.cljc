@@ -47,8 +47,15 @@
                                      {:min-elements 2 :max-elements 3})
                             {:num-elements 1}))))
 
+(defn nan? [x]
+  (and (number? x)
+       #?(:clj (Double/isNaN x)
+          :cljs (js/Number.isNaN x))))
+
 (s/def ::params
-  (s/and map? seq))
+  (s/and map?
+         seq
+         #(every? (complement nan?) (keys %))))
 
 (s/def ::param-expr
   (s/cat :query-expr ::query-expr
