@@ -64,7 +64,14 @@
       (is (= {:current-user {:user/favorite-color :color/blue
                              :user/favorite-fellow-user {:user/favorite-color :color/red}}}
              (parser {:state state} '[{:current-user [:user/favorite-color
-                                                      {:user/favorite-fellow-user ...}]}]))))))
+                                                      {:user/favorite-fellow-user ...}]}]))))
+
+    (testing "Passes on remote queries."
+      (is (= '[{:current-user [:user/favorite-color
+                               {:user/favorite-fellow-user ...}]}]
+             (parser {:state state} '[{:current-user [:user/favorite-color
+                                                      {:user/favorite-fellow-user ...}]}]
+                     :some-remote))))))
 
 (deftest aliasing-parser-aliases
   (let [inner-read (fn [{:keys [query ast parser] {:keys [key]} :ast :as env} dispatch-key params]
