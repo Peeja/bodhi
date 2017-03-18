@@ -1,5 +1,5 @@
 (ns new-parser.tests
-  (:require [clojure.test :refer [deftest is]]
+  (:require [clojure.test :refer [deftest testing is]]
             [clojure.test.check.generators :as gen]
             [clojure.set :as set]
             [clojure.spec :as s #?@(:cljs [:include-macros true])]
@@ -8,6 +8,63 @@
             [new-parser.om-specs :as om-specs]
             [om.next :as om]
             [om.util :as om-util]))
+
+(deftest basic-parser-reads-from-state
+  (let [parser (new-parser/basic-parser)
+        state (atom {:other-info {:some "data"
+                                  :and "more data"}
+                     :current-user [:user/by-id 123]
+                     :user/by-id {123 {:user/favorite-color :color/blue
+                                       :user/favorite-number 42
+                                       :user/favorite-fellow-user [:user/by-id 456]}
+                                  456 {:user/favorite-color :color/red
+                                       :user/favorite-number 7}}})]
+
+    (testing "With no join, reads everything."
+      (is (= {:other-info {:some "data"
+                           :and "more data"}}
+             (parser {:state state} '[:other-info]))))
+
+    (testing "With a joined query, reads that."
+      (is (= {:other-info {:some "data"}}
+             (parser {:state state} '[{:other-info [:some]}]))))
+
+    (testing "Reads through an ident."
+      (is (= {:current-user {:user/favorite-color :color/blue}}
+             (parser {:state state} '[{:current-user [:user/favorite-color]}]))))
+
+    (testing "With [*], reads everything."
+      (is (= {:current-user {:user/favorite-color :color/blue
+                             :user/favorite-number 42
+                             :user/favorite-fellow-user {:user/favorite-color :color/red
+                                                         :user/favorite-number 7}}}
+             (parser {:state state} '[{:current-user [*]}]))))
+
+    (testing "Reads a singleton ident."
+      (is (= {'[:current-user _] {:user/favorite-color :color/blue}}
+             (parser {:state state} '[{[:current-user _] [:user/favorite-color]}]))))
+
+    (testing "Reads a non-singleton ident"
+      (is (= {[:user/by-id 123] {:user/favorite-color :color/blue}}
+             (parser {:state state} '[{[:user/by-id 123] [:user/favorite-color]}]))))
+
+    (testing "Reads a singleton ident from anywhere."
+      (is (= {:other-info {'[:current-user _] {:user/favorite-color :color/blue}}}
+             (parser {:state state} '[{:other-info [{[:current-user _] [:user/favorite-color]}]}]))))
+
+    (testing "Reads a non-singleton ident from anywhere."
+      (is (= {:other-info {[:user/by-id 123] {:user/favorite-color :color/blue}}}
+             (parser {:state state} '[{:other-info [{[:user/by-id 123] [:user/favorite-color]}]}]))))
+
+    (testing "Reads through multiple nodes."
+      (is (= {:current-user {:user/favorite-fellow-user {:user/favorite-color :color/red}}}
+             (parser {:state state} '[{:current-user [{:user/favorite-fellow-user [:user/favorite-color]}]}]))))
+
+    (testing "Reads recursively."
+      (is (= {:current-user {:user/favorite-color :color/blue
+                             :user/favorite-fellow-user {:user/favorite-color :color/red}}}
+             (parser {:state state} '[{:current-user [:user/favorite-color
+                                                      {:user/favorite-fellow-user ...}]}]))))))
 
 (deftest aliasing-parser-aliases
   (let [inner-read (fn [{:keys [query ast parser] {:keys [key]} :ast :as env} dispatch-key params]
