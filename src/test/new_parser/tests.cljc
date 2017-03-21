@@ -10,7 +10,11 @@
             [om.util :as om-util]))
 
 (deftest basic-parser-reads-from-state
-  (let [parser (new-parser/basic-parser)
+  (testing "Requires an outer-parser."
+    (is (thrown-with-msg? AssertionError #":outer-parser"
+                          ((new-parser/basic-parser) {} [:some-key]))))
+
+  (let [parser (new-parser/composed-parser (new-parser/basic-parser))
         state (atom {:other-info {:some "data"
                                   :and "more data"}
                      :current-user [:user/by-id 123]
@@ -100,6 +104,8 @@
        joined-query (s/gen ::om-specs/joined-query)]
 
       ;; Without a :< param, the aliasing parser should behave just like the parser it wraps.
+      (is (= (inner-parser {} [aliased-from] nil)
+             (parser {} [aliased-from] nil)))
       (is (= (inner-parser {} [{aliased-from joined-query}] nil)
              (parser {} [{aliased-from joined-query}] nil)))
       (is (= (inner-parser {} [{(list aliased-from params) joined-query}] nil)
@@ -107,6 +113,8 @@
 
       ;; (The params can appear in multiple places in the query syntax, so we
       ;; convert the results to AST form where it's unambiguous before comparing.)
+      (is (= (om/query->ast (inner-parser {} [aliased-from] :remote))
+             (om/query->ast (parser {} [aliased-from] :remote))))
       (is (= (om/query->ast (inner-parser {} [{aliased-from joined-query}] :remote))
              (om/query->ast (parser {} [{aliased-from joined-query}] :remote))))
       (is (= (om/query->ast (inner-parser {} [{(list aliased-from params) joined-query}] :remote))
@@ -114,6 +122,9 @@
 
 
       ;; With a :< param, it should alias the key and pass on the remaining params.
+      (is (= (set/rename-keys (inner-parser {} [aliased-from] nil)
+                              {aliased-from aliased-to})
+             (parser {} [(list aliased-to {:< aliased-from})] nil)))
       (is (= (set/rename-keys (inner-parser {} [{aliased-from joined-query}] nil)
                               {aliased-from aliased-to})
              (parser {} [{(list aliased-to {:< aliased-from}) joined-query}] nil)))
@@ -122,7 +133,35 @@
              (parser {} [{(list aliased-to (assoc params :< aliased-from)) joined-query}] nil)))
 
       ;; But for remote queries, it should pass the :< along to the remote.
+      (is (= (om/query->ast (inner-parser {} [(list aliased-to {:< aliased-from})] :remote))
+             (om/query->ast (parser {} [(list aliased-to {:< aliased-from})] :remote))))
       (is (= (om/query->ast (inner-parser {} [{(list aliased-to {:< aliased-from}) joined-query}] :remote))
              (om/query->ast (parser {} [{(list aliased-to {:< aliased-from}) joined-query}] :remote))))
       (is (= (om/query->ast (inner-parser {} [{(list aliased-to (assoc params :< aliased-from)) joined-query}] :remote))
              (om/query->ast (parser {} [{(list aliased-to (assoc params :< aliased-from)) joined-query}] :remote)))))))
+
+(deftest all-together-now
+  (let [parser (new-parser/composed-parser (new-parser/aliasing-parser (new-parser/basic-parser)))
+        state (atom {:other-info {:some "data"
+                                  :and "more data"}
+                     :current-user [:user/by-id 123]
+                     :user/by-id {123 {:user/favorite-color :color/blue
+                                       :user/favorite-number 42
+                                       :user/favorite-fellow-user [:user/by-id 456]}
+                                  456 {:user/favorite-color :color/red
+                                       :user/favorite-number 7}}})]
+
+    (is (= {:current-user-1 {:user/favorite-color :color/blue}
+            :current-user-2 {:user/favorite-number 42
+                             :favorite-user-1 {:user/favorite-color :color/red}
+                             :favorite-user-2 {:user/favorite-number 7}}}
+           (parser {:state state} '[{(:current-user-1 {:< :current-user})
+                                     [:user/favorite-color]}
+                                    {(:current-user-2 {:< :current-user})
+                                     [:user/favorite-number
+                                      {(:favorite-user-1 {:< :user/favorite-fellow-user})
+                                       [:user/favorite-color
+                                        {:user/favorite-fellow-user ...}]}
+                                      {(:favorite-user-2 {:< :user/favorite-fellow-user})
+                                       [:user/favorite-number
+                                        {:user/favorite-fellow-user ...}]}]}])))))
