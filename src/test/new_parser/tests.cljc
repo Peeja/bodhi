@@ -175,7 +175,18 @@
              (parser {:state state} '[{:current-user
                                        [:user/favorite-color
                                         {(:user/pet {:pet/name "Otis"})
-                                         [:pet/name :pet/species]}]}]))))))
+                                         [:pet/name :pet/species]}]}]))))
+
+    (testing "Passes on remote queries."
+      (is (= '[{:current-user
+                [:user/favorite-color
+                 {(:user/pet {:pet/name "Milo"})
+                  [:pet/name :pet/species]}]}]
+             (parser {:state state} '[{:current-user
+                                       [:user/favorite-color
+                                        {(:user/pet {:pet/name "Milo"})
+                                         [:pet/name :pet/species]}]}]
+                     :some-remote))))))
 
 (deftest all-together-now
   (let [parser ((comp new-parser/composed-parser
