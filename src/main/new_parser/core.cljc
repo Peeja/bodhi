@@ -3,6 +3,9 @@
             [om.next.impl.parser :as om-parser]
             [om.util :as om-util]))
 
+(defn- assert-outer-parser [outer-parser]
+  (assert (fn? outer-parser) "No :outer-parser found in parser env. Don't forget to wrap your parser with composed-parser."))
+
 (defn composed-parser [next-parser]
   (fn self
     ([env query] (self env query nil))
@@ -12,8 +15,8 @@
 (defn basic-parser []
   (om/parser
    {:read
-    (fn [{:keys [target state outer-parser query] {:keys [key]} :ast :as env} _ _]
-      (assert (fn? outer-parser) "No :outer-parser found in parser env. Don't forget to wrap your parser with composed-parser.")
+    (fn [{:keys [outer-parser target state query] {:keys [key]} :ast :as env} _ _]
+      (assert-outer-parser outer-parser)
       (if target
         {target true}
         {:value
@@ -56,4 +59,21 @@
                             true vector)]
            (get (next-parser env next-query) next-parser-key))}))}))
 
-
+(defn param-indexed-parser [next-parser]
+  (om/parser
+   {:read
+    (fn [{:keys [outer-parser target state query] {:keys [key]} :ast :as env} _ params]
+      (assert-outer-parser outer-parser)
+      {:value
+       (let [refs @state
+             node (:node env refs)]
+         (if (seq params)
+           (let [next-node (get-in node [key params])
+                 next-node (if (om-util/ident? next-node)
+                             (get-in refs next-node)
+                             next-node)]
+             (outer-parser (assoc env :node next-node) query))
+           (let [next-query (cond-> key
+                              query (hash-map query)
+                              true vector)]
+             (get (next-parser env next-query) key))))})}))

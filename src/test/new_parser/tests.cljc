@@ -140,23 +140,79 @@
       (is (= (om/query->ast (inner-parser {} [{(list aliased-to (assoc params :< aliased-from)) joined-query}] :remote))
              (om/query->ast (parser {} [{(list aliased-to (assoc params :< aliased-from)) joined-query}] :remote)))))))
 
+(deftest param-indexed-parser
+  (testing "Requires an outer-parser."
+    (is (thrown-with-msg? AssertionError #":outer-parser"
+                          ((new-parser/param-indexed-parser (om/parser {}))
+                           {} [:some-key]))))
+
+  (let [parser ((comp new-parser/composed-parser
+                      new-parser/param-indexed-parser
+                      new-parser/basic-parser))
+        state (atom {:current-user [:user/by-id 123]
+                     :user/by-id {123 {:user/favorite-color :color/blue
+                                       :user/pet {{:pet/name "Milo"} {:pet/name "Milo"
+                                                                      :pet/species :pet-species/cat
+                                                                      :pet/description "orange tabby"}
+                                                  {:pet/name "Otis"} [:pet/by-id 654]}}}
+                     :pet/by-id {654 {:pet/name "Otis"
+                                      :pet/species :pet-species/dog
+                                      :pet/description "pug"}}})]
+
+    (testing "Fetches from a param-indexed key."
+      (is (= {:current-user {:user/favorite-color :color/blue
+                             :user/pet {:pet/name "Milo"
+                                        :pet/species :pet-species/cat}}}
+             (parser {:state state} '[{:current-user
+                                       [:user/favorite-color
+                                        {(:user/pet {:pet/name "Milo"})
+                                         [:pet/name :pet/species]}]}]))))
+
+    (testing "Fetches from a param-indexed key through an ident."
+      (is (= {:current-user {:user/favorite-color :color/blue
+                             :user/pet {:pet/name "Otis"
+                                        :pet/species :pet-species/dog}}}
+             (parser {:state state} '[{:current-user
+                                       [:user/favorite-color
+                                        {(:user/pet {:pet/name "Otis"})
+                                         [:pet/name :pet/species]}]}]))))))
+
 (deftest all-together-now
-  (let [parser (new-parser/composed-parser (new-parser/aliasing-parser (new-parser/basic-parser)))
+  (let [parser ((comp new-parser/composed-parser
+                      new-parser/aliasing-parser
+                      new-parser/param-indexed-parser
+                      new-parser/basic-parser))
         state (atom {:other-info {:some "data"
                                   :and "more data"}
                      :current-user [:user/by-id 123]
                      :user/by-id {123 {:user/favorite-color :color/blue
                                        :user/favorite-number 42
-                                       :user/favorite-fellow-user [:user/by-id 456]}
+                                       :user/favorite-fellow-user [:user/by-id 456]
+                                       :user/pet {{:pet/name "Milo"} [:pet/by-id 321]
+                                                  {:pet/name "Otis"} [:pet/by-id 654]}}
                                   456 {:user/favorite-color :color/red
-                                       :user/favorite-number 7}}})]
+                                       :user/favorite-number 7}}
+                     :pet/by-id {321 {:pet/name "Milo"
+                                      :pet/species :pet-species/cat
+                                      :pet/description "orange tabby"}
+                                 654 {:pet/name "Otis"
+                                      :pet/species :pet-species/dog
+                                      :pet/description "pug"}}})]
 
-    (is (= {:current-user-1 {:user/favorite-color :color/blue}
+    (is (= {:current-user-1 {:user/favorite-color :color/blue
+                             :milo {:pet/name "Milo"
+                                    :pet/species :pet-species/cat}
+                             :otis {:pet/name "Otis"
+                                    :pet/species :pet-species/dog}}
             :current-user-2 {:user/favorite-number 42
                              :favorite-user-1 {:user/favorite-color :color/red}
                              :favorite-user-2 {:user/favorite-number 7}}}
            (parser {:state state} '[{(:current-user-1 {:< :current-user})
-                                     [:user/favorite-color]}
+                                     [:user/favorite-color
+                                      {(:milo {:< :user/pet :pet/name "Milo"})
+                                       [:pet/name :pet/species]}
+                                      {(:otis {:< :user/pet :pet/name "Otis"})
+                                       [:pet/name :pet/species]}]}
                                     {(:current-user-2 {:< :current-user})
                                      [:user/favorite-number
                                       {(:favorite-user-1 {:< :user/favorite-fellow-user})
