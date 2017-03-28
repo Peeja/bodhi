@@ -90,17 +90,10 @@
           {target
            (if-let [[path next-expr-fn] (get config key)]
              (let [next-expr (next-expr-fn query (get refs data-key))]
-               (outer-parser env [next-expr] target)
                (om-parser/expr->ast (first (outer-parser env [next-expr] target))))
-             (let [next-query (cond-> key
-                                query (hash-map query)
-                                true vector)]
-               (om-parser/expr->ast (first (next-parser env [(om-parser/ast->expr ast)] target)))))}
+             (om-parser/expr->ast (first (next-parser env [(om-parser/ast->expr ast)] target))))}
           {:value
            (if-let [[path next-expr-fn] (get config key)]
              (let [next-expr (next-expr-fn query (get refs data-key))]
                (get-in (outer-parser env [next-expr]) path))
-             (let [next-query (cond-> key
-                                query (hash-map query)
-                                true vector)]
-               (get (next-parser env next-query) key)))})))}))
+             (get (next-parser env [(om-parser/ast->expr ast)]) key))})))}))

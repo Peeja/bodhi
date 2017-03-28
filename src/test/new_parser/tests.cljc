@@ -194,52 +194,41 @@
                           ((new-parser/param-indexed-parser (om/parser {}))
                            {} [:some-key]))))
 
-  (let [parser ((comp new-parser/composed-parser
-                      new-parser/aliasing-parser
-                      new-parser/param-indexed-parser
-                      (partial new-parser/query-mapping-parser
-                               :app/route-params
-                               {:route-params/selected-user [[:selected-user]
-                                                             (fn [query {:keys [username]}]
-                                                               `{(:selected-user {:< :root/user :user/name ~username}) ~query})]
-                                :route-params/selected-pet [[:user-for-selected-pet :user/pet]
-                                                            (fn [query {:keys [username pet-name]}]
-                                                              `{(:user-for-selected-pet {:< :root/user :user/name ~username})
-                                                                [{(:user/pet {:pet/name ~pet-name})
-                                                                  ~query}]})]})
-                      new-parser/basic-parser))
-        state (atom {:app/route-params {:username "nipponfarm" :pet-name "Otis"}
-                     :root/user {{:user/name "nipponfarm"} [:user/by-id 123]
-                                 {:user/name "jburnford"} [:user/by-id 456]}
-                     :user/by-id {123 {:user/name "nipponfarm"
-                                       :user/favorite-color :color/blue
-                                       :user/pet {{:pet/name "Milo"} [:pet/by-id 321]
-                                                  {:pet/name "Otis"} [:pet/by-id 654]}}
-                                  456 {:user/name "jburnford"
-                                       :user/favorite-color :color/red
-                                       :user/pet {{:pet/name "Chance"} [:pet/by-id 987]
-                                                  {:pet/name "Shadow"} [:pet/by-id 210]
-                                                  {:pet/name "Sassy"} [:pet/by-id 543]}}}
-                     :pet/by-id {321 {:pet/name "Milo"
-                                      :pet/species :pet-species/cat
-                                      :pet/description "orange tabby"}
-                                 654 {:pet/name "Otis"
-                                      :pet/species :pet-species/dog
-                                      :pet/description "pug"}
-                                 987 {:pet/name "Chance"
-                                      :pet/species :pet-species/dog
-                                      :pet/description "American bulldog"}
-                                 210 {:pet/name "Shadow"
-                                      :pet/species :pet-species/dog
-                                      :pet/description "golden retriever"}
-                                 543 {:pet/name "Sassy"
-                                      :pet/species :pet-species/cat
-                                      :pet/description "Himalayan"}}})]
+  (let [inner-read (fn [{:keys [query ast parser] {:keys [key]} :ast :as env} dispatch-key params]
+                     ;; A bit of an odd implementation to keep things as simple
+                     ;; as possible in the unit test. For most keys, returns a
+                     ;; map describing how the inner-read was called.
+                     ;; For :user-for-selected-pet, recurses once, to provide
+                     ;; the correct structure for the query-mapping-parser to
+                     ;; walk to find the pet (which, once again, is actually a
+                     ;; map describing how the inner-read was called.
+                     {:value (if (= :user-for-selected-pet key)
+                               (parser env query)
+                               {:key key :params params :query query})
+                      :remote true})
+        inner-parser (om/parser {:read inner-read})
+        parser (->> inner-parser
+                    (new-parser/query-mapping-parser :app/route-params
+                                                     {:route-params/selected-user
+                                                      [[:selected-user]
+                                                       (fn [query {:keys [username]}]
+                                                         `{(:selected-user {:< :root/user :user/name ~username}) ~query})]
+                                                      :route-params/selected-pet
+                                                      [[:user-for-selected-pet :user/pet]
+                                                       (fn [query {:keys [username pet-name]}]
+                                                         `{(:user-for-selected-pet {:< :root/user :user/name ~username})
+                                                           [{(:user/pet {:pet/name ~pet-name})
+                                                             ~query}]})]})
+                    new-parser/composed-parser)
+        state (atom {:app/route-params {:username "nipponfarm" :pet-name "Otis"}})]
 
     (testing "Maps keys locally according to its config"
-      (is (= {:route-params/selected-user {:user/favorite-color :color/blue}
-              :route-params/selected-pet {:pet/name "Otis"
-                                          :pet/species :pet-species/dog}}
+      (is (= {:route-params/selected-user {:key :selected-user
+                                           :params {:< :root/user :user/name "nipponfarm"}
+                                           :query [:user/favorite-color]}
+              :route-params/selected-pet {:key :user/pet
+                                          :params {:pet/name "Otis"}
+                                          :query [:pet/name :pet/species]}}
              (parser {:state state}
                      [{:route-params/selected-user [:user/favorite-color]}
                       {:route-params/selected-pet [:pet/name :pet/species]}]))))
@@ -257,7 +246,7 @@
              (om/query->ast (parser {:state state}
                                     [{:route-params/selected-user [:user/favorite-color]}
                                      {:route-params/selected-pet [:pet/name :pet/species]}]
-                                    :some-remote)))))))
+                                    :remote)))))))
 
 (deftest all-together-now
   (let [parser ((comp new-parser/composed-parser
