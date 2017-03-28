@@ -306,30 +306,84 @@
                                       :pet/species :pet-species/cat
                                       :pet/description "Himalayan"}}})]
 
-    (is (= {:current-user-1 {:user/favorite-color :color/blue
-                             :milo {:pet/name "Milo"
-                                    :pet/species :pet-species/cat}
-                             :otis {:pet/name "Otis"
-                                    :pet/species :pet-species/dog}}
-            :current-user-2 {:user/favorite-number 42
-                             :favorite-user-1 {:user/favorite-color :color/red}
-                             :favorite-user-2 {:user/favorite-number 7}}
-            :route-params/selected-user {:user/favorite-color :color/blue}
-            :route-params/selected-pet {:pet/name "Otis"
-                                        :pet/species :pet-species/dog}}
-           (parser {:state state} '[{(:current-user-1 {:< :app/current-user})
-                                     [:user/favorite-color
-                                      {(:milo {:< :user/pet :pet/name "Milo"})
-                                       [:pet/name :pet/species]}
-                                      {(:otis {:< :user/pet :pet/name "Otis"})
-                                       [:pet/name :pet/species]}]}
-                                    {(:current-user-2 {:< :app/current-user})
-                                     [:user/favorite-number
-                                      {(:favorite-user-1 {:< :user/favorite-fellow-user})
+    (let [query '[{(:current-user-1 {:< :app/current-user})
+                   [:user/favorite-color
+                    {(:milo {:< :user/pet :pet/name "Milo"})
+                     [:pet/name :pet/species]}
+                    {(:otis {:< :user/pet :pet/name "Otis"})
+                     [:pet/name :pet/species]}]}
+                  {(:current-user-2 {:< :app/current-user})
+                   [:user/favorite-number
+                    {(:favorite-user-1 {:< :user/favorite-fellow-user})
+                     [:user/favorite-color
+                      {:user/favorite-fellow-user ...}]}
+                    {(:favorite-user-2 {:< :user/favorite-fellow-user})
+                     [:user/favorite-number
+                      {:user/favorite-fellow-user ...}]}]}
+                  {:route-params/selected-user [:user/favorite-color]}
+                  {:route-params/selected-pet [:pet/name :pet/species]}]]
+      (is (= {:current-user-1 {:user/favorite-color :color/blue
+                               :milo {:pet/name "Milo"
+                                      :pet/species :pet-species/cat}
+                               :otis {:pet/name "Otis"
+                                      :pet/species :pet-species/dog}}
+              :current-user-2 {:user/favorite-number 42
+                               :favorite-user-1 {:user/favorite-color :color/red}
+                               :favorite-user-2 {:user/favorite-number 7}}
+              :route-params/selected-user {:user/favorite-color :color/blue}
+              :route-params/selected-pet {:pet/name "Otis"
+                                          :pet/species :pet-species/dog}}
+             (parser {:state state} '[{(:current-user-1 {:< :app/current-user})
                                        [:user/favorite-color
-                                        {:user/favorite-fellow-user ...}]}
-                                      {(:favorite-user-2 {:< :user/favorite-fellow-user})
+                                        {(:milo {:< :user/pet :pet/name "Milo"})
+                                         [:pet/name :pet/species]}
+                                        {(:otis {:< :user/pet :pet/name "Otis"})
+                                         [:pet/name :pet/species]}]}
+                                      {(:current-user-2 {:< :app/current-user})
                                        [:user/favorite-number
-                                        {:user/favorite-fellow-user ...}]}]}
-                                    {:route-params/selected-user [:user/favorite-color]}
-                                    {:route-params/selected-pet [:pet/name :pet/species]}])))))
+                                        {(:favorite-user-1 {:< :user/favorite-fellow-user})
+                                         [:user/favorite-color
+                                          {:user/favorite-fellow-user ...}]}
+                                        {(:favorite-user-2 {:< :user/favorite-fellow-user})
+                                         [:user/favorite-number
+                                          {:user/favorite-fellow-user ...}]}]}
+                                      {:route-params/selected-user [:user/favorite-color]}
+                                      {:route-params/selected-pet [:pet/name :pet/species]}])))
+      (is (= (om/query->ast
+              '[{(:current-user-1 {:< :app/current-user})
+                 [:user/favorite-color
+                  {(:milo {:< :user/pet :pet/name "Milo"})
+                   [:pet/name :pet/species]}
+                  {(:otis {:< :user/pet :pet/name "Otis"})
+                   [:pet/name :pet/species]}]}
+                {(:current-user-2 {:< :app/current-user})
+                 [:user/favorite-number
+                  {(:favorite-user-1 {:< :user/favorite-fellow-user})
+                   [:user/favorite-color
+                    {:user/favorite-fellow-user ...}]}
+                  {(:favorite-user-2 {:< :user/favorite-fellow-user})
+                   [:user/favorite-number
+                    {:user/favorite-fellow-user ...}]}]}
+                {(:selected-user {:< :root/user :user/name "nipponfarm"})
+                 [:user/favorite-color]}
+                {(:user-for-selected-pet {:< :root/user :user/name "nipponfarm"})
+                 [{(:user/pet {:pet/name "Otis"})
+                   [:pet/name :pet/species]}]}])
+             (om/query->ast
+              (parser {:state state} '[{(:current-user-1 {:< :app/current-user})
+                                        [:user/favorite-color
+                                         {(:milo {:< :user/pet :pet/name "Milo"})
+                                          [:pet/name :pet/species]}
+                                         {(:otis {:< :user/pet :pet/name "Otis"})
+                                          [:pet/name :pet/species]}]}
+                                       {(:current-user-2 {:< :app/current-user})
+                                        [:user/favorite-number
+                                         {(:favorite-user-1 {:< :user/favorite-fellow-user})
+                                          [:user/favorite-color
+                                           {:user/favorite-fellow-user ...}]}
+                                         {(:favorite-user-2 {:< :user/favorite-fellow-user})
+                                          [:user/favorite-number
+                                           {:user/favorite-fellow-user ...}]}]}
+                                       {:route-params/selected-user [:user/favorite-color]}
+                                       {:route-params/selected-pet [:pet/name :pet/species]}]
+                      :some-remote)))))))
