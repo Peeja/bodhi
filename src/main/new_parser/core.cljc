@@ -62,10 +62,10 @@
 (defn param-indexed-parser [next-parser]
   (om/parser
    {:read
-    (fn [{:keys [outer-parser target state query] {:keys [key]} :ast :as env} _ params]
+    (fn [{:keys [outer-parser target ast state query] {:keys [key]} :ast :as env} _ params]
       (assert-outer-parser outer-parser)
       (if target
-        {target true}
+        {target (om-parser/expr->ast (first (next-parser env [(om-parser/ast->expr ast)] target)))}
         {:value
          (let [refs @state
                node (:node env refs)]
@@ -79,3 +79,28 @@
                                 query (hash-map query)
                                 true vector)]
                (get (next-parser env next-query) key))))}))}))
+
+(defn query-mapping-parser [data-key config next-parser]
+  (om/parser
+   {:read
+    (fn [{:keys [outer-parser target ast state query] {:keys [key]} :ast :as env} _ params]
+      (assert-outer-parser outer-parser)
+      (let [refs @state]
+        (if target
+          {target
+           (if-let [[path next-expr-fn] (get config key)]
+             (let [next-expr (next-expr-fn query (get refs data-key))]
+               (outer-parser env [next-expr] target)
+               (om-parser/expr->ast (first (outer-parser env [next-expr] target))))
+             (let [next-query (cond-> key
+                                query (hash-map query)
+                                true vector)]
+               (om-parser/expr->ast (first (next-parser env [(om-parser/ast->expr ast)] target)))))}
+          {:value
+           (if-let [[path next-expr-fn] (get config key)]
+             (let [next-expr (next-expr-fn query (get refs data-key))]
+               (get-in (outer-parser env [next-expr]) path))
+             (let [next-query (cond-> key
+                                query (hash-map query)
+                                true vector)]
+               (get (next-parser env next-query) key)))})))}))
