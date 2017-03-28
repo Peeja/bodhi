@@ -263,23 +263,48 @@
   (let [parser ((comp new-parser/composed-parser
                       new-parser/aliasing-parser
                       new-parser/param-indexed-parser
+                      (partial new-parser/query-mapping-parser
+                               :app/route-params
+                               {:route-params/selected-user [[:selected-user]
+                                                             (fn [query {:keys [username]}]
+                                                               `{(:selected-user {:< :root/user :user/name ~username}) ~query})]
+                                :route-params/selected-pet [[:user-for-selected-pet :user/pet]
+                                                            (fn [query {:keys [username pet-name]}]
+                                                              `{(:user-for-selected-pet {:< :root/user :user/name ~username})
+                                                                [{(:user/pet {:pet/name ~pet-name})
+                                                                  ~query}]})]})
                       new-parser/basic-parser))
-        state (atom {:other-info {:some "data"
-                                  :and "more data"}
-                     :app/current-user [:user/by-id 123]
-                     :user/by-id {123 {:user/favorite-color :color/blue
+        state (atom {:app/current-user [:user/by-id 123]
+                     :app/route-params {:username "nipponfarm" :pet-name "Otis"}
+                     :root/user {{:user/name "nipponfarm"} [:user/by-id 123]
+                                 {:user/name "jburnford"} [:user/by-id 456]}
+                     :user/by-id {123 {:user/name "nipponfarm"
+                                       :user/favorite-color :color/blue
                                        :user/favorite-number 42
                                        :user/favorite-fellow-user [:user/by-id 456]
                                        :user/pet {{:pet/name "Milo"} [:pet/by-id 321]
                                                   {:pet/name "Otis"} [:pet/by-id 654]}}
-                                  456 {:user/favorite-color :color/red
-                                       :user/favorite-number 7}}
+                                  456 {:user/name "jburnford"
+                                       :user/favorite-color :color/red
+                                       :user/favorite-number 7
+                                       :user/pet {{:pet/name "Chance"} [:pet/by-id 987]
+                                                  {:pet/name "Shadow"} [:pet/by-id 210]
+                                                  {:pet/name "Sassy"} [:pet/by-id 543]}}}
                      :pet/by-id {321 {:pet/name "Milo"
                                       :pet/species :pet-species/cat
                                       :pet/description "orange tabby"}
                                  654 {:pet/name "Otis"
                                       :pet/species :pet-species/dog
-                                      :pet/description "pug"}}})]
+                                      :pet/description "pug"}
+                                 987 {:pet/name "Chance"
+                                      :pet/species :pet-species/dog
+                                      :pet/description "American bulldog"}
+                                 210 {:pet/name "Shadow"
+                                      :pet/species :pet-species/dog
+                                      :pet/description "golden retriever"}
+                                 543 {:pet/name "Sassy"
+                                      :pet/species :pet-species/cat
+                                      :pet/description "Himalayan"}}})]
 
     (is (= {:current-user-1 {:user/favorite-color :color/blue
                              :milo {:pet/name "Milo"
@@ -288,7 +313,10 @@
                                     :pet/species :pet-species/dog}}
             :current-user-2 {:user/favorite-number 42
                              :favorite-user-1 {:user/favorite-color :color/red}
-                             :favorite-user-2 {:user/favorite-number 7}}}
+                             :favorite-user-2 {:user/favorite-number 7}}
+            :route-params/selected-user {:user/favorite-color :color/blue}
+            :route-params/selected-pet {:pet/name "Otis"
+                                        :pet/species :pet-species/dog}}
            (parser {:state state} '[{(:current-user-1 {:< :app/current-user})
                                      [:user/favorite-color
                                       {(:milo {:< :user/pet :pet/name "Milo"})
@@ -302,4 +330,6 @@
                                         {:user/favorite-fellow-user ...}]}
                                       {(:favorite-user-2 {:< :user/favorite-fellow-user})
                                        [:user/favorite-number
-                                        {:user/favorite-fellow-user ...}]}]}])))))
+                                        {:user/favorite-fellow-user ...}]}]}
+                                    {:route-params/selected-user [:user/favorite-color]}
+                                    {:route-params/selected-pet [:pet/name :pet/species]}])))))
