@@ -376,3 +376,52 @@
                                        {:route-params/selected-user [:user/favorite-color]}
                                        {:route-params/selected-pet [:pet/name :pet/species]}]
                       :some-remote)))))))
+
+
+(declare my-merge*)
+
+(defn basic-merge [{:keys [state res ast] :as env}]
+  (reduce (fn [ret {:keys [key type] :as ast-child}]
+            (case type
+              :prop (-> ret
+                        (update :keys conj key)
+                        (update :next assoc key (get res key)))
+              :join (let [{:keys [keys next]} (my-merge* {:state (get state key) :res (get res key) :ast ast-child})]
+                      (-> ret
+                          (update :keys into keys)
+                          (update :next assoc key next)))))
+          {:keys #{}
+           :next state}
+          (:children ast)))
+
+(defn my-merge* [{:keys [state res ast] :as env}]
+  (basic-merge env))
+
+(defn my-merge [reconciler state res query]
+  (let [ast (om/query->ast query)]
+    (my-merge* {:state state :res res :ast ast})))
+
+(deftest test-merge
+  (let [merge my-merge
+        reconciler {}
+        state {:app/a-number 111
+               :app/a-string "Hello, there."}
+        res {:app/a-number 222}
+        query [:app/a-number]]
+    (is (= {:keys #{:app/a-number}
+            :next {:app/a-number 222
+                   :app/a-string "Hello, there."}}
+           (merge reconciler state res query))))
+
+  (let [merge my-merge
+        reconciler {}
+        state {:app/current-user {:user/name "nipponfarm"
+                                  :user/favorite-color :color/blue
+                                  :user/favorite-number 42}}
+        res {:app/current-user {:user/favorite-number 57}}
+        query [{:app/current-user [:user/favorite-number]}]]
+    (is (= {:keys #{:user/favorite-number}
+            :next {:app/current-user {:user/name "nipponfarm"
+                                      :user/favorite-color :color/blue
+                                      :user/favorite-number 57}}}
+           (merge reconciler state res query)))))
