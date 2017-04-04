@@ -377,6 +377,17 @@
                                        {:route-params/selected-pet [:pet/name :pet/species]}]
                       :some-remote)))))))
 
+(defn aliasing-merge [next-merge]
+  (fn [{:keys [ast novelty] :as env}]
+    (if-not (contains? (:params ast) :<)
+      (next-merge env)
+      (let [aliased-from (get-in ast [:params :<])
+            next-ast (-> ast
+                         (update :params dissoc :<)
+                         (assoc :key aliased-from))]
+        (next-merge (assoc env
+                           :ast next-ast
+                           :novelty {aliased-from (get novelty (:key ast))}))))))
 
 (defn basic-merge [{:keys [state novelty ast merge]}]
   (let [{:keys [key]} ast]
@@ -389,10 +400,11 @@
 
 (defn my-merge* [state novelty ast]
   (reduce (fn [ret ast]
-            (-> (basic-merge {:state (:next ret)
-                              :novelty novelty
-                              :ast ast
-                              :merge my-merge*})
+            (-> ((aliasing-merge basic-merge)
+                 {:state (:next ret)
+                  :novelty novelty
+                  :ast ast
+                  :merge my-merge*})
                 (update :keys into (:keys ret))))
           {:keys #{}
            :next state}
@@ -424,5 +436,20 @@
     (is (= {:keys #{:user/favorite-number}
             :next {:app/current-user {:user/name "nipponfarm"
                                       :user/favorite-color :color/blue
+                                      :user/favorite-number 57}}}
+           (merge reconciler state novelty query))))
+
+  (let [merge my-merge
+        reconciler {}
+        state {:app/current-user {:user/name "nipponfarm"
+                                  :user/favorite-color :color/blue
+                                  :user/favorite-number 42}}
+        novelty {:the-user {:the-color :color/green}
+                 :the-user-again {:the-number 57}}
+        query '[{(:the-user {:< :app/current-user}) [(:the-color {:< :user/favorite-color})]}
+                {(:the-user-again {:< :app/current-user}) [(:the-number {:< :user/favorite-number})]}]]
+    (is (= {:keys #{:user/favorite-color :user/favorite-number}
+            :next {:app/current-user {:user/name "nipponfarm"
+                                      :user/favorite-color :color/green
                                       :user/favorite-number 57}}}
            (merge reconciler state novelty query)))))
