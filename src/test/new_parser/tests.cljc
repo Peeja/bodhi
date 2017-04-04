@@ -378,50 +378,51 @@
                       :some-remote)))))))
 
 
-(declare my-merge*)
+(defn basic-merge [{:keys [state novelty ast merge]}]
+  (let [{:keys [key]} ast]
+    (case (:type ast)
+      :prop {:keys #{key}
+             :next (assoc state key (get novelty key))}
+      :join (let [{:keys [next] nested-keys :keys} (merge (get state key) (get novelty key) ast)]
+              {:keys nested-keys
+               :next (assoc state key next)}))))
 
-(defn basic-merge [{:keys [state res ast] :as env}]
-  (reduce (fn [ret {:keys [key type] :as ast-child}]
-            (case type
-              :prop (-> ret
-                        (update :keys conj key)
-                        (update :next assoc key (get res key)))
-              :join (let [{:keys [keys next]} (my-merge* {:state (get state key) :res (get res key) :ast ast-child})]
-                      (-> ret
-                          (update :keys into keys)
-                          (update :next assoc key next)))))
+(defn my-merge* [state novelty ast]
+  (reduce (fn [ret ast]
+            (-> (basic-merge {:state (:next ret)
+                              :novelty novelty
+                              :ast ast
+                              :merge my-merge*})
+                (update :keys into (:keys ret))))
           {:keys #{}
            :next state}
           (:children ast)))
 
-(defn my-merge* [{:keys [state res ast] :as env}]
-  (basic-merge env))
-
-(defn my-merge [reconciler state res query]
+(defn my-merge [reconciler state novelty query]
   (let [ast (om/query->ast query)]
-    (my-merge* {:state state :res res :ast ast})))
+    (my-merge* state novelty ast)))
 
 (deftest test-merge
   (let [merge my-merge
         reconciler {}
         state {:app/a-number 111
                :app/a-string "Hello, there."}
-        res {:app/a-number 222}
+        novelty {:app/a-number 222}
         query [:app/a-number]]
     (is (= {:keys #{:app/a-number}
             :next {:app/a-number 222
                    :app/a-string "Hello, there."}}
-           (merge reconciler state res query))))
+           (merge reconciler state novelty query))))
 
   (let [merge my-merge
         reconciler {}
         state {:app/current-user {:user/name "nipponfarm"
                                   :user/favorite-color :color/blue
                                   :user/favorite-number 42}}
-        res {:app/current-user {:user/favorite-number 57}}
+        novelty {:app/current-user {:user/favorite-number 57}}
         query [{:app/current-user [:user/favorite-number]}]]
     (is (= {:keys #{:user/favorite-number}
             :next {:app/current-user {:user/name "nipponfarm"
                                       :user/favorite-color :color/blue
                                       :user/favorite-number 57}}}
-           (merge reconciler state res query)))))
+           (merge reconciler state novelty query)))))
