@@ -509,4 +509,32 @@
               :next {:app/current-user {:user/name "nipponfarm"
                                         :user/favorite-color :color/green
                                         :user/favorite-number 57}}}
-             (my-merge {} state novelty query))))))
+             (my-merge {} state novelty query))))
+
+    (testing "with normalization"
+      (let [UserWithColor (ui
+                            static om/Ident
+                            (ident [this props] [:user/by-name (:user/name props)])
+                            static om/IQuery
+                            (query [this] '[:user/name (:the-color {:< :user/favorite-color})]))
+            UserWithNumber (ui
+                             static om/Ident
+                             (ident [this props] [:user/by-name (:user/name props)])
+                             static om/IQuery
+                             (query [this] '[:user/name (:the-number {:< :user/favorite-number})]))
+            Root (ui
+                   static om/IQuery
+                   (query [this] `[{(:the-user {:< :app/current-user}) ~(om/get-query UserWithColor)}
+                                   {(:the-user-again {:< :app/current-user}) ~(om/get-query UserWithNumber)}]))
+            state {}
+            novelty {:the-user {:user/name "nipponfarm"
+                                :the-color :color/green}
+                     :the-user-again {:user/name "nipponfarm"
+                                      :the-number 57}}
+            query (om/get-query Root)]
+        (is (= {:keys #{:user/name :user/favorite-color :user/favorite-number}
+                :next {:app/current-user [:user/by-name "nipponfarm"]
+                       :user/by-name {"nipponfarm" {:user/name "nipponfarm"
+                                                    :user/favorite-color :color/green
+                                                    :user/favorite-number 57}}}}
+               (my-merge {} state novelty query)))))))
