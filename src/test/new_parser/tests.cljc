@@ -7,7 +7,7 @@
             [com.gfredericks.test.chuck.clojure-test #?(:clj :refer :cljs :refer-macros) [checking]]
             [new-parser.core :as new-parser]
             [new-parser.om-specs :as om-specs]
-            [om.next :as om]
+            [om.next :as om #?(:clj :refer :cljs :refer-macros) [ui]]
             [om.util :as om-util]))
 
 (deftest basic-parser-reads-from-state
@@ -380,26 +380,43 @@
 
 (defn aliasing-merge [next-merge]
   (fn [{:keys [ast novelty] :as env}]
-    (if-not (contains? (:params ast) :<)
-      (next-merge env)
-      (let [aliased-from (get-in ast [:params :<])
-            next-ast (-> ast
+    (if-let [aliased-from (get-in ast [:params :<])]
+      (let [next-ast (-> ast
                          (update :params dissoc :<)
                          (assoc :key aliased-from))]
         (next-merge (assoc env
                            :ast next-ast
-                           :novelty {aliased-from (get novelty (:key ast))}))))))
+                           :novelty {aliased-from (get novelty (:key ast))})))
+      (next-merge env))))
+
+(defn normalizing-merge [next-merge]
+  (fn [{:keys [merge state path novelty ast] :as env}]
+    (let [{:keys [key component]} ast]
+      (if #?(:clj (satisfies? om/Ident component)
+             :cljs (implements? om/Ident component))
+        (let [ident (om/ident component (get novelty key))]
+          (next-merge (-> env
+                          (update :state assoc-in (conj path key) ident)
+                          (assoc-in [:ast :key] ident)
+                          (assoc :path []
+                                 :novelty {ident (get novelty key)}))))
+        (next-merge env)))))
 
 (defn basic-merge [{:keys [merge state path novelty ast]}]
-  (let [{:keys [key]} ast]
-    (case (:type ast)
+  (let [{:keys [key type]} ast
+        new-path (if (om-util/ident? key)
+                   (into path key)
+                   (conj path key))]
+    (case type
       :prop {:keys #{key}
-             :next (assoc-in state (conj path key) (get novelty key))}
-      :join (merge state (conj path key) (get novelty key) ast))))
+             :next (assoc-in state new-path (get novelty key))}
+      :join (merge state new-path (get novelty key) ast))))
 
 (defn my-merge* [state path novelty ast]
   (reduce (fn [ret ast]
-            (-> ((aliasing-merge basic-merge)
+            (-> ((-> basic-merge
+                     normalizing-merge
+                     aliasing-merge)
                  {:merge my-merge*
                   :state (:next ret)
                   :path path
@@ -413,6 +430,7 @@
 (defn my-merge [reconciler state novelty query]
   (let [ast (om/query->ast query)]
     (my-merge* state [] novelty ast)))
+
 
 (deftest test-merge
   (testing "Updates a simple prop on the root"
@@ -435,6 +453,48 @@
               :next {:app/current-user {:user/name "nipponfarm"
                                         :user/favorite-color :color/blue
                                         :user/favorite-number 57}}}
+             (my-merge {} state novelty query)))))
+
+  (testing "Normalizes data"
+    (let [User (ui
+                 static om/Ident
+                 (ident [this props] [:user/by-name (:user/name props)])
+                 static om/IQuery
+                 (query [this] [:user/name :user/favorite-number]))
+          Root (ui
+                 static om/IQuery
+                 (query [this] [{:app/current-user (om/get-query User)}]))
+          state {}
+          novelty {:app/current-user {:user/name "nipponfarm"
+                                      :user/favorite-number 57}}
+          query (om/get-query Root)]
+      (is (= {:keys #{:user/name :user/favorite-number}
+              :next {:app/current-user [:user/by-name "nipponfarm"]
+                     :user/by-name {"nipponfarm" {:user/name "nipponfarm"
+                                                  :user/favorite-number 57}}}}
+             (my-merge {} state novelty query))))
+
+    ;; Bit of an odd test case to demonstrate that a component which doesn't
+    ;; implement Ident doesn't break normalization.
+    (let [User (ui
+                 static om/Ident
+                 (ident [this props] [:user/by-name (:user/name props)])
+                 static om/IQuery
+                 (query [this] [:user/name :user/favorite-number]))
+          Page (ui
+                 static om/IQuery
+                 (query [this] [{:app/current-user (om/get-query User)}]))
+          Root (ui
+                 static om/IQuery
+                 (query [this] [{:page/user (om/get-query Page)}]))
+          state {}
+          novelty {:page/user {:app/current-user {:user/name "nipponfarm"
+                                                  :user/favorite-number 57}}}
+          query (om/get-query Root)]
+      (is (= {:keys #{:user/name :user/favorite-number}
+              :next {:page/user {:app/current-user [:user/by-name "nipponfarm"]}
+                     :user/by-name {"nipponfarm" {:user/name "nipponfarm"
+                                                  :user/favorite-number 57}}}}
              (my-merge {} state novelty query)))))
 
   (testing "Updates with an aliased query"
