@@ -415,41 +415,38 @@
     (my-merge* state novelty ast)))
 
 (deftest test-merge
-  (let [merge my-merge
-        reconciler {}
-        state {:app/a-number 111
-               :app/a-string "Hello, there."}
-        novelty {:app/a-number 222}
-        query [:app/a-number]]
-    (is (= {:keys #{:app/a-number}
-            :next {:app/a-number 222
-                   :app/a-string "Hello, there."}}
-           (merge reconciler state novelty query))))
+  (testing "Updates a simple prop on the root"
+    (let [state {:app/a-number 111
+                 :app/a-string "Hello, there."}
+          novelty {:app/a-number 222}
+          query [:app/a-number]]
+      (is (= {:keys #{:app/a-number}
+              :next {:app/a-number 222
+                     :app/a-string "Hello, there."}}
+             (my-merge {} state novelty query)))))
 
-  (let [merge my-merge
-        reconciler {}
-        state {:app/current-user {:user/name "nipponfarm"
-                                  :user/favorite-color :color/blue
-                                  :user/favorite-number 42}}
-        novelty {:app/current-user {:user/favorite-number 57}}
-        query [{:app/current-user [:user/favorite-number]}]]
-    (is (= {:keys #{:user/favorite-number}
-            :next {:app/current-user {:user/name "nipponfarm"
-                                      :user/favorite-color :color/blue
-                                      :user/favorite-number 57}}}
-           (merge reconciler state novelty query))))
+  (testing "Updates a prop through a join"
+    (let [state {:app/current-user {:user/name "nipponfarm"
+                                    :user/favorite-color :color/blue
+                                    :user/favorite-number 42}}
+          novelty {:app/current-user {:user/favorite-number 57}}
+          query [{:app/current-user [:user/favorite-number]}]]
+      (is (= {:keys #{:user/favorite-number}
+              :next {:app/current-user {:user/name "nipponfarm"
+                                        :user/favorite-color :color/blue
+                                        :user/favorite-number 57}}}
+             (my-merge {} state novelty query)))))
 
-  (let [merge my-merge
-        reconciler {}
-        state {:app/current-user {:user/name "nipponfarm"
-                                  :user/favorite-color :color/blue
-                                  :user/favorite-number 42}}
-        novelty {:the-user {:the-color :color/green}
-                 :the-user-again {:the-number 57}}
-        query '[{(:the-user {:< :app/current-user}) [(:the-color {:< :user/favorite-color})]}
-                {(:the-user-again {:< :app/current-user}) [(:the-number {:< :user/favorite-number})]}]]
-    (is (= {:keys #{:user/favorite-color :user/favorite-number}
-            :next {:app/current-user {:user/name "nipponfarm"
-                                      :user/favorite-color :color/green
-                                      :user/favorite-number 57}}}
-           (merge reconciler state novelty query)))))
+  (testing "Updates with an aliased query"
+    (let [state {:app/current-user {:user/name "nipponfarm"
+                                    :user/favorite-color :color/blue
+                                    :user/favorite-number 42}}
+          novelty {:the-user {:the-color :color/green}
+                   :the-user-again {:the-number 57}}
+          query '[{(:the-user {:< :app/current-user}) [(:the-color {:< :user/favorite-color})]}
+                  {(:the-user-again {:< :app/current-user}) [(:the-number {:< :user/favorite-number})]}]]
+      (is (= {:keys #{:user/favorite-color :user/favorite-number}
+              :next {:app/current-user {:user/name "nipponfarm"
+                                        :user/favorite-color :color/green
+                                        :user/favorite-number 57}}}
+             (my-merge {} state novelty query))))))
