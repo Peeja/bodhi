@@ -389,22 +389,21 @@
                            :ast next-ast
                            :novelty {aliased-from (get novelty (:key ast))}))))))
 
-(defn basic-merge [{:keys [state novelty ast merge]}]
+(defn basic-merge [{:keys [merge state path novelty ast]}]
   (let [{:keys [key]} ast]
     (case (:type ast)
       :prop {:keys #{key}
-             :next (assoc state key (get novelty key))}
-      :join (let [{:keys [next] nested-keys :keys} (merge (get state key) (get novelty key) ast)]
-              {:keys nested-keys
-               :next (assoc state key next)}))))
+             :next (assoc-in state (conj path key) (get novelty key))}
+      :join (merge state (conj path key) (get novelty key) ast))))
 
-(defn my-merge* [state novelty ast]
+(defn my-merge* [state path novelty ast]
   (reduce (fn [ret ast]
             (-> ((aliasing-merge basic-merge)
-                 {:state (:next ret)
+                 {:merge my-merge*
+                  :state (:next ret)
+                  :path path
                   :novelty novelty
-                  :ast ast
-                  :merge my-merge*})
+                  :ast ast})
                 (update :keys into (:keys ret))))
           {:keys #{}
            :next state}
@@ -412,7 +411,7 @@
 
 (defn my-merge [reconciler state novelty query]
   (let [ast (om/query->ast query)]
-    (my-merge* state novelty ast)))
+    (my-merge* state [] novelty ast)))
 
 (deftest test-merge
   (testing "Updates a simple prop on the root"
