@@ -1,5 +1,6 @@
 (ns new-parser.tests
-  (:require [clojure.test :refer [deftest testing is]]
+  (:require #?(:cljs [cljsjs.react])
+            [clojure.test :refer [deftest testing is]]
             [clojure.test.check.generators :as gen]
             [clojure.set :as set]
             [clojure.spec :as s #?@(:cljs [:include-macros true])]
@@ -11,7 +12,7 @@
 
 (deftest basic-parser-reads-from-state
   (testing "Requires an outer-parser."
-    (is (thrown-with-msg? AssertionError #":outer-parser"
+    (is (thrown-with-msg? #?(:clj AssertionError :cljs js/Error) #":outer-parser"
                           ((new-parser/basic-parser) {} [:some-key]))))
 
   (let [parser (new-parser/composed-parser (new-parser/basic-parser))
@@ -142,7 +143,7 @@
 
 (deftest param-indexed-parser
   (testing "Requires an outer-parser."
-    (is (thrown-with-msg? AssertionError #":outer-parser"
+    (is (thrown-with-msg? #?(:clj AssertionError :cljs js/Error) #":outer-parser"
                           ((new-parser/param-indexed-parser (om/parser {}))
                            {} [:some-key]))))
 
@@ -190,7 +191,7 @@
 
 (deftest query-mapping-parser
   (testing "Requires an outer-parser."
-    (is (thrown-with-msg? AssertionError #":outer-parser"
+    (is (thrown-with-msg? #?(:clj AssertionError :cljs js/Error) #":outer-parser"
                           ((new-parser/param-indexed-parser (om/parser {}))
                            {} [:some-key]))))
 

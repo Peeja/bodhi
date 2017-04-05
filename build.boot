@@ -10,7 +10,8 @@
                  [crisptrutski/boot-cljs-test "0.3.0"          :scope "test"]
                  [adzerk/bootlaces            "0.1.13"         :scope "test"]
                  [org.clojure/test.check      "0.9.0"          :scope "test"]
-                 [com.gfredericks/test.chuck  "0.2.7"          :scope "test"]]
+                 [com.gfredericks/test.chuck  "0.2.7"          :scope "test"]
+                 [cljsjs/react                "15.3.1-0"       :scope "test"]]
  :exclusions '[org.clojure/clojure org.clojure/clojurescript])
 
 (require
@@ -71,5 +72,5 @@
 (deftask auto-test []
   (comp
     (watch)
-    (speak)
-    (test-clj)))
+    (notify)
+    (test-cljs)))
