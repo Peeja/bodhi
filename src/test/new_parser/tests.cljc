@@ -379,58 +379,46 @@
                       :some-remote)))))))
 
 (defn key-identifying-merge [next-merge]
-  (fn [{:keys [merge state path novelty ast] :as env}]
+  (fn [{:keys [ast] :as env}]
     (let [{:keys [key type]} ast]
       (cond-> (next-merge env)
         (= :prop type) (update :keys conj key)))))
 
 (defn aliasing-merge [next-merge]
-  (fn [{:keys [ast novelty] :as env}]
+  (fn [{:keys [ast path] :as env}]
     (let [{:keys [key params]} ast]
       (if-let [aliased-from (:< params)]
-        (let [next-ast (-> ast
-                           (update :params dissoc :<)
-                           (assoc :key aliased-from))]
-          (next-merge (assoc env
-                             :ast next-ast
-                             :novelty {aliased-from (get novelty key)})))
+        (next-merge (assoc env
+                           :ast (update ast :params dissoc :<)
+                           :path (-> path pop (conj aliased-from))))
         (next-merge env)))))
 
 (defn param-indexed-merge [next-merge]
-  (fn [{:keys [ast path novelty] :as env}]
+  (fn [{:keys [ast path] :as env}]
     (let [{:keys [key params]} ast]
       (if (seq params)
-        (let [next-ast (-> ast
-                           (dissoc :params)
-                           (assoc :key params))]
-          (next-merge (-> env
-                          (update :path conj key)
-                          (assoc :ast next-ast
-                                 :novelty {params (get novelty key)}))))
+        (next-merge (assoc env
+                           :ast (dissoc ast :params)
+                           :path (conj path params)))
         (next-merge env)))))
 
 (defn normalizing-merge [next-merge]
-  (fn [{:keys [merge state path novelty ast] :as env}]
+  (fn [{:keys [path novelty ast] :as env}]
     (let [{:keys [key component]} ast]
       (if #?(:clj (satisfies? om/Ident component)
              :cljs (implements? om/Ident component))
         (let [ident (om/ident component (get novelty key))]
           (next-merge (-> env
-                          (update :state assoc-in (conj path key) ident)
-                          (assoc-in [:ast :key] ident)
-                          (assoc :path []
-                                 :novelty {ident (get novelty key)}))))
+                          (update :state assoc-in path ident)
+                          (assoc :path ident))))
         (next-merge env)))))
 
 (defn basic-merge [{:keys [merge state path novelty ast]}]
-  (let [{:keys [key type]} ast
-        new-path (if (om-util/ident? key)
-                   (into path key)
-                   (conj path key))]
+  (let [{:keys [key type]} ast]
     (case type
       :prop {:keys #{}
-             :next (assoc-in state new-path (get novelty key))}
-      :join (merge state new-path (get novelty key) ast))))
+             :next (assoc-in state path (get novelty key))}
+      :join (merge state path (get novelty key) ast))))
 
 (defn my-merge* [state path novelty ast]
   (reduce (fn [ret ast]
@@ -441,7 +429,7 @@
                      key-identifying-merge)
                  {:merge my-merge*
                   :state (:next ret)
-                  :path path
+                  :path (conj path (:key ast))
                   :novelty novelty
                   :ast ast})
                 (update :keys into (:keys ret))))
