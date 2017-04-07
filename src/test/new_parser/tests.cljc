@@ -378,6 +378,12 @@
                                        {:route-params/selected-pet [:pet/name :pet/species]}]
                       :some-remote)))))))
 
+(defn key-identifying-merge [next-merge]
+  (fn [{:keys [merge state path novelty ast] :as env}]
+    (let [{:keys [key type]} ast]
+      (cond-> (next-merge env)
+        (= :prop type) (update :keys conj key)))))
+
 (defn aliasing-merge [next-merge]
   (fn [{:keys [ast novelty] :as env}]
     (if-let [aliased-from (get-in ast [:params :<])]
@@ -408,7 +414,7 @@
                    (into path key)
                    (conj path key))]
     (case type
-      :prop {:keys #{key}
+      :prop {:keys #{}
              :next (assoc-in state new-path (get novelty key))}
       :join (merge state new-path (get novelty key) ast))))
 
@@ -416,7 +422,8 @@
   (reduce (fn [ret ast]
             (-> ((-> basic-merge
                      normalizing-merge
-                     aliasing-merge)
+                     aliasing-merge
+                     key-identifying-merge)
                  {:merge my-merge*
                   :state (:next ret)
                   :path path
@@ -505,7 +512,7 @@
                    :the-user-again {:the-number 57}}
           query '[{(:the-user {:< :app/current-user}) [(:the-color {:< :user/favorite-color})]}
                   {(:the-user-again {:< :app/current-user}) [(:the-number {:< :user/favorite-number})]}]]
-      (is (= {:keys #{:user/favorite-color :user/favorite-number}
+      (is (= {:keys #{:the-color :the-number}
               :next {:app/current-user {:user/name "nipponfarm"
                                         :user/favorite-color :color/green
                                         :user/favorite-number 57}}}
@@ -532,7 +539,7 @@
                      :the-user-again {:user/name "nipponfarm"
                                       :the-number 57}}
             query (om/get-query Root)]
-        (is (= {:keys #{:user/name :user/favorite-color :user/favorite-number}
+        (is (= {:keys #{:user/name :the-color :the-number}
                 :next {:app/current-user [:user/by-name "nipponfarm"]
                        :user/by-name {"nipponfarm" {:user/name "nipponfarm"
                                                     :user/favorite-color :color/green
