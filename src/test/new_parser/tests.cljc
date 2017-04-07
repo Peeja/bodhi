@@ -386,14 +386,28 @@
 
 (defn aliasing-merge [next-merge]
   (fn [{:keys [ast novelty] :as env}]
-    (if-let [aliased-from (get-in ast [:params :<])]
-      (let [next-ast (-> ast
-                         (update :params dissoc :<)
-                         (assoc :key aliased-from))]
-        (next-merge (assoc env
-                           :ast next-ast
-                           :novelty {aliased-from (get novelty (:key ast))})))
-      (next-merge env))))
+    (let [{:keys [key params]} ast]
+      (if-let [aliased-from (:< params)]
+        (let [next-ast (-> ast
+                           (update :params dissoc :<)
+                           (assoc :key aliased-from))]
+          (next-merge (assoc env
+                             :ast next-ast
+                             :novelty {aliased-from (get novelty key)})))
+        (next-merge env)))))
+
+(defn param-indexed-merge [next-merge]
+  (fn [{:keys [ast path novelty] :as env}]
+    (let [{:keys [key params]} ast]
+      (if (seq params)
+        (let [next-ast (-> ast
+                           (dissoc :params)
+                           (assoc :key params))]
+          (next-merge (-> env
+                          (update :path conj key)
+                          (assoc :ast next-ast
+                                 :novelty {params (get novelty key)}))))
+        (next-merge env)))))
 
 (defn normalizing-merge [next-merge]
   (fn [{:keys [merge state path novelty ast] :as env}]
@@ -422,6 +436,7 @@
   (reduce (fn [ret ast]
             (-> ((-> basic-merge
                      normalizing-merge
+                     param-indexed-merge
                      aliasing-merge
                      key-identifying-merge)
                  {:merge my-merge*
@@ -544,4 +559,26 @@
                        :user/by-name {"nipponfarm" {:user/name "nipponfarm"
                                                     :user/favorite-color :color/green
                                                     :user/favorite-number 57}}}}
-               (my-merge {} state novelty query)))))))
+               (my-merge {} state novelty query))))))
+
+  (testing "Stores data by params"
+    (let [state {:app/current-user {:user/name "nipponfarm"
+                                    :user/favorite-color :color/blue
+                                    :user/favorite-number 42}}
+          novelty {:app/current-user {:milo {:pet/name "Milo"
+                                             :pet/species :pet-species/cat}
+                                      :otis {:pet/name "Otis"
+                                             :pet/species :pet-species/dog}}}
+          query '[{:app/current-user [{(:milo {:< :user/pet :pet/name "Milo"})
+                                       [:pet/name :pet/species]}
+                                      {(:otis {:< :user/pet :pet/name "Otis"})
+                                       [:pet/name :pet/species]}]}]]
+      (is (= {:keys #{:pet/name :pet/species}
+              :next {:app/current-user {:user/name "nipponfarm"
+                                        :user/favorite-color :color/blue
+                                        :user/favorite-number 42
+                                        :user/pet {{:pet/name "Milo"} {:pet/name "Milo"
+                                                                       :pet/species :pet-species/cat}
+                                                   {:pet/name "Otis"} {:pet/name "Otis"
+                                                                       :pet/species :pet-species/dog}}}}}
+             (my-merge {} state novelty query))))))
