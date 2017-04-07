@@ -10,12 +10,8 @@
             [om.next :as om #?(:clj :refer :cljs :refer-macros) [ui]]
             [om.util :as om-util]))
 
-(deftest basic-parser-reads-from-state
-  (testing "Requires an outer-parser."
-    (is (thrown-with-msg? #?(:clj AssertionError :cljs js/Error) #":outer-parser"
-                          ((new-parser/basic-parser) {} [:some-key]))))
-
-  (let [parser (new-parser/composed-parser (new-parser/basic-parser))
+(deftest basic-read-reads-from-state
+  (let [parser (om/parser {:read new-parser/basic-read})
         state (atom {:other-info {:some "data"
                                   :and "more data"}
                      :app/current-user [:user/by-id 123]
@@ -40,9 +36,9 @@
 
     (testing "With [*], reads everything."
       (is (= {:app/current-user {:user/favorite-color :color/blue
-                             :user/favorite-number 42
-                             :user/favorite-fellow-user {:user/favorite-color :color/red
-                                                         :user/favorite-number 7}}}
+                                 :user/favorite-number 42
+                                 :user/favorite-fellow-user {:user/favorite-color :color/red
+                                                             :user/favorite-number 7}}}
              (parser {:state state} '[{:app/current-user [*]}]))))
 
     (testing "Reads a singleton ident."
@@ -67,18 +63,18 @@
 
     (testing "Reads recursively."
       (is (= {:app/current-user {:user/favorite-color :color/blue
-                             :user/favorite-fellow-user {:user/favorite-color :color/red}}}
+                                 :user/favorite-fellow-user {:user/favorite-color :color/red}}}
              (parser {:state state} '[{:app/current-user [:user/favorite-color
-                                                      {:user/favorite-fellow-user ...}]}]))))
+                                                          {:user/favorite-fellow-user ...}]}]))))
 
     (testing "Passes on remote queries."
       (is (= '[{:app/current-user [:user/favorite-color
-                               {:user/favorite-fellow-user ...}]}]
+                                   {:user/favorite-fellow-user ...}]}]
              (parser {:state state} '[{:app/current-user [:user/favorite-color
-                                                      {:user/favorite-fellow-user ...}]}]
+                                                          {:user/favorite-fellow-user ...}]}]
                      :some-remote))))))
 
-(deftest aliasing-parser-aliases
+(deftest aliasing-read-aliases
   (let [inner-read (fn [{:keys [query ast parser] {:keys [key]} :ast :as env} dispatch-key params]
                      {:value
                       {:key key
@@ -95,61 +91,57 @@
                          query)}
 
                       :remote true})
-        inner-parser (om/parser {:read inner-read})
-        parser (new-parser/aliasing-parser inner-parser)]
+        plain-parser (om/parser {:read inner-read})
+        parser (om/parser {:read (new-parser/aliasing-read inner-read)})]
 
     (checking "aliasing parser aliases keys" 10
       [aliased-to gen/keyword-ns
        aliased-from (s/gen ::om-specs/join-key)
        params (s/gen ::om-specs/params)
-       joined-query (s/gen ::om-specs/joined-query)]
+       ;; This weird such-that filters out queries that include NaN, which is
+       ;; not equal to itself and makes it impossible to make sensible test
+       ;; assertions.
+       joined-query (gen/such-that #(= % %) (s/gen ::om-specs/joined-query))]
 
       ;; Without a :< param, the aliasing parser should behave just like the parser it wraps.
-      (is (= (inner-parser {} [aliased-from] nil)
+      (is (= (plain-parser {} [aliased-from] nil)
              (parser {} [aliased-from] nil)))
-      (is (= (inner-parser {} [{aliased-from joined-query}] nil)
+      (is (= (plain-parser {} [{aliased-from joined-query}] nil)
              (parser {} [{aliased-from joined-query}] nil)))
-      (is (= (inner-parser {} [{(list aliased-from params) joined-query}] nil)
+      (is (= (plain-parser {} [{(list aliased-from params) joined-query}] nil)
              (parser {} [{(list aliased-from params) joined-query}] nil)))
 
       ;; (The params can appear in multiple places in the query syntax, so we
       ;; convert the results to AST form where it's unambiguous before comparing.)
-      (is (= (om/query->ast (inner-parser {} [aliased-from] :remote))
+      (is (= (om/query->ast (plain-parser {} [aliased-from] :remote))
              (om/query->ast (parser {} [aliased-from] :remote))))
-      (is (= (om/query->ast (inner-parser {} [{aliased-from joined-query}] :remote))
+      (is (= (om/query->ast (plain-parser {} [{aliased-from joined-query}] :remote))
              (om/query->ast (parser {} [{aliased-from joined-query}] :remote))))
-      (is (= (om/query->ast (inner-parser {} [{(list aliased-from params) joined-query}] :remote))
+      (is (= (om/query->ast (plain-parser {} [{(list aliased-from params) joined-query}] :remote))
              (om/query->ast (parser {} [{(list aliased-from params) joined-query}] :remote))))
 
 
       ;; With a :< param, it should alias the key and pass on the remaining params.
-      (is (= (set/rename-keys (inner-parser {} [aliased-from] nil)
+      (is (= (set/rename-keys (plain-parser {} [aliased-from] nil)
                               {aliased-from aliased-to})
              (parser {} [(list aliased-to {:< aliased-from})] nil)))
-      (is (= (set/rename-keys (inner-parser {} [{aliased-from joined-query}] nil)
+      (is (= (set/rename-keys (plain-parser {} [{aliased-from joined-query}] nil)
                               {aliased-from aliased-to})
              (parser {} [{(list aliased-to {:< aliased-from}) joined-query}] nil)))
-      (is (= (set/rename-keys (inner-parser {} [{(list aliased-from params) joined-query}] nil)
+      (is (= (set/rename-keys (plain-parser {} [{(list aliased-from params) joined-query}] nil)
                               {aliased-from aliased-to})
              (parser {} [{(list aliased-to (assoc params :< aliased-from)) joined-query}] nil)))
 
       ;; But for remote queries, it should pass the :< along to the remote.
-      (is (= (om/query->ast (inner-parser {} [(list aliased-to {:< aliased-from})] :remote))
+      (is (= (om/query->ast (plain-parser {} [(list aliased-to {:< aliased-from})] :remote))
              (om/query->ast (parser {} [(list aliased-to {:< aliased-from})] :remote))))
-      (is (= (om/query->ast (inner-parser {} [{(list aliased-to {:< aliased-from}) joined-query}] :remote))
+      (is (= (om/query->ast (plain-parser {} [{(list aliased-to {:< aliased-from}) joined-query}] :remote))
              (om/query->ast (parser {} [{(list aliased-to {:< aliased-from}) joined-query}] :remote))))
-      (is (= (om/query->ast (inner-parser {} [{(list aliased-to (assoc params :< aliased-from)) joined-query}] :remote))
+      (is (= (om/query->ast (plain-parser {} [{(list aliased-to (assoc params :< aliased-from)) joined-query}] :remote))
              (om/query->ast (parser {} [{(list aliased-to (assoc params :< aliased-from)) joined-query}] :remote)))))))
 
-(deftest param-indexed-parser
-  (testing "Requires an outer-parser."
-    (is (thrown-with-msg? #?(:clj AssertionError :cljs js/Error) #":outer-parser"
-                          ((new-parser/param-indexed-parser (om/parser {}))
-                           {} [:some-key]))))
-
-  (let [parser ((comp new-parser/composed-parser
-                      new-parser/param-indexed-parser
-                      new-parser/basic-parser))
+(deftest param-indexed-read
+  (let [parser (om/parser {:read (new-parser/param-indexed-read new-parser/basic-read)})
         state (atom {:app/current-user [:user/by-id 123]
                      :user/by-id {123 {:user/favorite-color :color/blue
                                        :user/pet {{:pet/name "Milo"} {:pet/name "Milo"
@@ -162,8 +154,8 @@
 
     (testing "Fetches from a param-indexed key."
       (is (= {:app/current-user {:user/favorite-color :color/blue
-                             :user/pet {:pet/name "Milo"
-                                        :pet/species :pet-species/cat}}}
+                                 :user/pet {:pet/name "Milo"
+                                            :pet/species :pet-species/cat}}}
              (parser {:state state} '[{:app/current-user
                                        [:user/favorite-color
                                         {(:user/pet {:pet/name "Milo"})
@@ -171,8 +163,8 @@
 
     (testing "Fetches from a param-indexed key through an ident."
       (is (= {:app/current-user {:user/favorite-color :color/blue
-                             :user/pet {:pet/name "Otis"
-                                        :pet/species :pet-species/dog}}}
+                                 :user/pet {:pet/name "Otis"
+                                            :pet/species :pet-species/dog}}}
              (parser {:state state} '[{:app/current-user
                                        [:user/favorite-color
                                         {(:user/pet {:pet/name "Otis"})
@@ -189,12 +181,7 @@
                                          [:pet/name :pet/species]}]}]
                      :some-remote))))))
 
-(deftest query-mapping-parser
-  (testing "Requires an outer-parser."
-    (is (thrown-with-msg? #?(:clj AssertionError :cljs js/Error) #":outer-parser"
-                          ((new-parser/param-indexed-parser (om/parser {}))
-                           {} [:some-key]))))
-
+(deftest query-mapping-read
   (let [inner-read (fn [{:keys [query ast parser] {:keys [key]} :ast :as env} dispatch-key params]
                      ;; A bit of an odd implementation to keep things as simple
                      ;; as possible in the unit test. For most keys, returns a
@@ -207,9 +194,10 @@
                                (parser env query)
                                {:key key :params params :query query})
                       :remote true})
-        inner-parser (om/parser {:read inner-read})
-        parser (->> inner-parser
-                    (new-parser/query-mapping-parser :app/route-params
+        parser (om/parser
+                {:read
+                 (->> inner-read
+                      (new-parser/query-mapping-read :app/route-params
                                                      {:route-params/selected-user
                                                       [[:selected-user]
                                                        (fn [query {:keys [username]}]
@@ -219,8 +207,8 @@
                                                        (fn [query {:keys [username pet-name]}]
                                                          `{(:user-for-selected-pet {:< :root/user :user/name ~username})
                                                            [{(:user/pet {:pet/name ~pet-name})
-                                                             ~query}]})]})
-                    new-parser/composed-parser)
+                                                             ~query}]})]}))})
+
         state (atom {:app/route-params {:username "nipponfarm" :pet-name "Otis"}})]
 
     (testing "Maps keys locally according to its config"
@@ -250,20 +238,21 @@
                                     :remote)))))))
 
 (deftest all-together-now
-  (let [parser ((comp new-parser/composed-parser
-                      new-parser/aliasing-parser
-                      new-parser/param-indexed-parser
-                      (partial new-parser/query-mapping-parser
-                               :app/route-params
-                               {:route-params/selected-user [[:selected-user]
-                                                             (fn [query {:keys [username]}]
-                                                               `{(:selected-user {:< :root/user :user/name ~username}) ~query})]
-                                :route-params/selected-pet [[:user-for-selected-pet :user/pet]
-                                                            (fn [query {:keys [username pet-name]}]
-                                                              `{(:user-for-selected-pet {:< :root/user :user/name ~username})
-                                                                [{(:user/pet {:pet/name ~pet-name})
-                                                                  ~query}]})]})
-                      new-parser/basic-parser))
+  (let [parser
+        (om/parser
+         {:read (->> new-parser/basic-read
+                     (new-parser/query-mapping-read
+                      :app/route-params
+                      {:route-params/selected-user [[:selected-user]
+                                                    (fn [query {:keys [username]}]
+                                                      `{(:selected-user {:< :root/user :user/name ~username}) ~query})]
+                       :route-params/selected-pet [[:user-for-selected-pet :user/pet]
+                                                   (fn [query {:keys [username pet-name]}]
+                                                     `{(:user-for-selected-pet {:< :root/user :user/name ~username})
+                                                       [{(:user/pet {:pet/name ~pet-name})
+                                                         ~query}]})]})
+                     new-parser/param-indexed-read
+                     new-parser/aliasing-read)})
         state (atom {:app/current-user [:user/by-id 123]
                      :app/route-params {:username "nipponfarm" :pet-name "Otis"}
                      :root/user {{:user/name "nipponfarm"} [:user/by-id 123]
