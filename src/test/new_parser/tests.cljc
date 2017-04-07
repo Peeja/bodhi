@@ -378,68 +378,14 @@
                                        {:route-params/selected-pet [:pet/name :pet/species]}]
                       :some-remote)))))))
 
-(defn key-identifying-merge [next-merge]
-  (fn [{:keys [ast] :as env}]
-    (let [{:keys [key type]} ast]
-      (cond-> (next-merge env)
-        (= :prop type) (update :keys conj key)))))
 
-(defn aliasing-merge [next-merge]
-  (fn [{:keys [ast path] :as env}]
-    (let [{:keys [key params]} ast]
-      (if-let [aliased-from (:< params)]
-        (next-merge (assoc env
-                           :ast (update ast :params dissoc :<)
-                           :path (-> path pop (conj aliased-from))))
-        (next-merge env)))))
-
-(defn param-indexed-merge [next-merge]
-  (fn [{:keys [ast path] :as env}]
-    (let [{:keys [key params]} ast]
-      (if (seq params)
-        (next-merge (assoc env
-                           :ast (dissoc ast :params)
-                           :path (conj path params)))
-        (next-merge env)))))
-
-(defn normalizing-merge [next-merge]
-  (fn [{:keys [path novelty ast] :as env}]
-    (let [{:keys [key component]} ast]
-      (if #?(:clj (satisfies? om/Ident component)
-             :cljs (implements? om/Ident component))
-        (let [ident (om/ident component (get novelty key))]
-          (next-merge (-> env
-                          (update :state assoc-in path ident)
-                          (assoc :path ident))))
-        (next-merge env)))))
-
-(defn basic-merge [{:keys [merge state path novelty ast]}]
-  (let [{:keys [key type]} ast]
-    (case type
-      :prop {:keys #{}
-             :next (assoc-in state path (get novelty key))}
-      :join (merge state path (get novelty key) ast))))
-
-(defn my-merge* [state path novelty ast]
-  (reduce (fn [ret ast]
-            (-> ((-> basic-merge
-                     normalizing-merge
-                     param-indexed-merge
-                     aliasing-merge
-                     key-identifying-merge)
-                 {:merge my-merge*
-                  :state (:next ret)
-                  :path (conj path (:key ast))
-                  :novelty novelty
-                  :ast ast})
-                (update :keys into (:keys ret))))
-          {:keys #{}
-           :next state}
-          (:children ast)))
-
-(defn my-merge [reconciler state novelty query]
-  (let [ast (om/query->ast query)]
-    (my-merge* state [] novelty ast)))
+(def my-merge
+  (new-parser/merge
+   (-> new-parser/basic-merge
+       new-parser/normalizing-merge
+       new-parser/param-indexed-merge
+       new-parser/aliasing-merge
+       new-parser/key-identifying-merge)))
 
 
 (deftest test-merge
