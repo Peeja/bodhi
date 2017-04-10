@@ -1,13 +1,13 @@
 (ns new-parser.tests
-  (:require #?(:cljs [cljsjs.react])
+  (:require [cljsjs.react]
             [clojure.test :refer [deftest testing is]]
             [clojure.test.check.generators :as gen]
             [clojure.set :as set]
-            [clojure.spec :as s #?@(:cljs [:include-macros true])]
-            [com.gfredericks.test.chuck.clojure-test #?(:clj :refer :cljs :refer-macros) [checking]]
+            [clojure.spec :as s :include-macros true]
+            [com.gfredericks.test.chuck.clojure-test :refer-macros [checking]]
             [new-parser.core :as new-parser]
             [new-parser.om-specs :as om-specs]
-            [om.next :as om #?(:clj :refer :cljs :refer-macros) [ui]]
+            [om.next :as om :refer-macros [ui]]
             [om.util :as om-util]))
 
 (deftest basic-read-reads-from-state
@@ -78,7 +78,7 @@
   (let [inner-read (fn [{:keys [query ast parser] {:keys [key]} :ast :as env} dispatch-key params]
                      {:value
                       {:key key
-                       :params params
+                       :params (not-empty params) ; Treat nil params the same as {}
                        :query
                        ;; If it's a recursive join...
                        (if (or (number? query)

@@ -96,8 +96,7 @@
 (defn normalizing-merge [next-merge]
   (fn [{:keys [path novelty ast] :as env}]
     (let [{:keys [key component]} ast]
-      (if #?(:clj (satisfies? om/Ident component)
-             :cljs (implements? om/Ident component))
+      (if (implements? om/Ident component)
         (let [ident (om/ident component (get novelty key))]
           (next-merge (-> env
                           (update :state assoc-in path ident)
