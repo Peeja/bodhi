@@ -1,17 +1,21 @@
 (ns bodhi.tests
-  (:require [cljsjs.react]
+  (:require [bodhi.aliasing :as aliasing]
+            [bodhi.core :as bodhi]
+            [bodhi.default-db :as default-db]
+            [bodhi.om-specs :as om-specs]
+            [bodhi.param-indexing :as param-indexing]
+            [bodhi.query-mapping :as query-mapping]
+            [cljsjs.react]
             [clojure.test :refer [deftest testing is]]
             [clojure.test.check.generators :as gen]
             [clojure.set :as set]
             [clojure.spec :as s :include-macros true]
             [com.gfredericks.test.chuck.clojure-test :refer-macros [checking]]
-            [bodhi.core :as bodhi]
-            [bodhi.om-specs :as om-specs]
             [om.next :as om :refer-macros [ui]]
             [om.util :as om-util]))
 
-(deftest basic-read-reads-from-state
-  (let [parser (om/parser {:read bodhi/basic-read})
+(deftest default-db-read-reads-from-state-in-db-format
+  (let [parser (om/parser {:read default-db/read})
         state (atom {:other-info {:some "data"
                                   :and "more data"}
                      :app/current-user [:user/by-id 123]
@@ -92,7 +96,7 @@
 
                       :remote true})
         plain-parser (om/parser {:read inner-read})
-        parser (om/parser {:read (bodhi/aliasing-read inner-read)})]
+        parser (om/parser {:read (aliasing/read inner-read)})]
 
     (checking "aliasing parser aliases keys" 10
       [aliased-to gen/keyword-ns
@@ -141,7 +145,7 @@
              (om/query->ast (parser {} [{(list aliased-to (assoc params :< aliased-from)) joined-query}] :remote)))))))
 
 (deftest param-indexed-read
-  (let [parser (om/parser {:read (bodhi/param-indexed-read bodhi/basic-read)})
+  (let [parser (om/parser {:read (param-indexing/read default-db/read)})
         state (atom {:app/current-user [:user/by-id 123]
                      :user/by-id {123 {:user/favorite-color :color/blue
                                        :user/pet {{:pet/name "Milo"} {:pet/name "Milo"
@@ -197,17 +201,17 @@
         parser (om/parser
                 {:read
                  (->> inner-read
-                      (bodhi/query-mapping-read :app/route-params
-                                                     {:route-params/selected-user
-                                                      [[:selected-user]
-                                                       (fn [query {:keys [username]}]
-                                                         `{(:selected-user {:< :root/user :user/name ~username}) ~query})]
-                                                      :route-params/selected-pet
-                                                      [[:user-for-selected-pet :user/pet]
-                                                       (fn [query {:keys [username pet-name]}]
-                                                         `{(:user-for-selected-pet {:< :root/user :user/name ~username})
-                                                           [{(:user/pet {:pet/name ~pet-name})
-                                                             ~query}]})]}))})
+                      (query-mapping/read :app/route-params
+                                          {:route-params/selected-user
+                                           [[:selected-user]
+                                            (fn [query {:keys [username]}]
+                                              `{(:selected-user {:< :root/user :user/name ~username}) ~query})]
+                                           :route-params/selected-pet
+                                           [[:user-for-selected-pet :user/pet]
+                                            (fn [query {:keys [username pet-name]}]
+                                              `{(:user-for-selected-pet {:< :root/user :user/name ~username})
+                                                [{(:user/pet {:pet/name ~pet-name})
+                                                  ~query}]})]}))})
 
         state (atom {:app/route-params {:username "nipponfarm" :pet-name "Otis"}})]
 
@@ -240,8 +244,8 @@
 (deftest all-together-now
   (let [parser
         (om/parser
-         {:read (->> bodhi/basic-read
-                     (bodhi/query-mapping-read
+         {:read (->> default-db/read
+                     (query-mapping/read
                       :app/route-params
                       {:route-params/selected-user [[:selected-user]
                                                     (fn [query {:keys [username]}]
@@ -251,8 +255,8 @@
                                                      `{(:user-for-selected-pet {:< :root/user :user/name ~username})
                                                        [{(:user/pet {:pet/name ~pet-name})
                                                          ~query}]})]})
-                     bodhi/param-indexed-read
-                     bodhi/aliasing-read)})
+                     param-indexing/read
+                     aliasing/read)})
         state (atom {:app/current-user [:user/by-id 123]
                      :app/route-params {:username "nipponfarm" :pet-name "Otis"}
                      :root/user {{:user/name "nipponfarm"} [:user/by-id 123]
@@ -372,8 +376,8 @@
   (bodhi/merge
    (-> bodhi/basic-merge
        bodhi/normalizing-merge
-       bodhi/param-indexed-merge
-       bodhi/aliasing-merge
+       param-indexing/merge
+       aliasing/merge
        bodhi/key-identifying-merge)))
 
 
