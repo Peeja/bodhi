@@ -1,4 +1,4 @@
-(ns new-parser.om-specs
+(ns bodhi.om-specs
   (:require [clojure.spec :as s]
             [clojure.test.check.generators :as gen]))
 

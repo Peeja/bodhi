@@ -1,4 +1,4 @@
-(ns new-parser.core
+(ns bodhi.core
   (:refer-clojure :exclude [merge])
   (:require [om.next :as om]
             [om.next.impl.parser :as om-parser]

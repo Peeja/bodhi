@@ -19,7 +19,7 @@
 (bootlaces! +version+ :dont-modify-paths? true)
 
 (task-options!
-  pom {:project 'new-parser
+  pom {:project 'bodhi
        :version +version+
        :description "FIXME"
        :url "FIXME"
@@ -48,7 +48,7 @@
     (comp
      (bt-cljs/test-cljs
       :js-env :node
-      :namespaces #{'new-parser.tests}
+      :namespaces #{'bodhi.tests}
       :cljs-opts {:parallel-build true}
       :exit? exit?))))
 
