@@ -24,8 +24,7 @@
        :description "FIXME"
        :url "FIXME"
        :scm {:url "FIXME"}
-       ;; FIXME Add :license
-       })
+       :license {"EPL" "http://www.eclipse.org/legal/epl-v10.html"}})
 
 (deftask build-jar []
   (set-env! :resource-paths #{"src"})
